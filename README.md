@@ -14,7 +14,7 @@ This project allows you to download Spotify playlists as MP3 files by searching 
 - Python 3.11+ (3.12 recommended)
 - [FFmpeg](https://ffmpeg.org/) installed or in PATH
 - Python packages:
-  ```bash
+```bash
   pip install spotipy yt-dlp mutagen requests tqdm
 ````
 
