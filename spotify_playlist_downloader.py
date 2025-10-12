@@ -99,33 +99,74 @@ def fetch_playlist_tracks(sp: spotipy.Spotify, playlist_id: str) -> List[Track]:
     return items
 
 def download_track_yt(search_query: str, out_path_template: str, bitrate_kbps: int = 192, verbose: bool = False) -> Optional[Path]:
+    """
+    Download a track from YouTube using yt-dlp and convert it to MP3.
+    Automatically picks the best available audio format (webm/m4a),
+    converts it to the desired bitrate, and retries on transient failures.
+    """
     ydl_opts = {
-        'format': 'bestaudio/best',
+        # Accept any best audio (webm or m4a)
+        'format': 'bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio/best',
         'outtmpl': out_path_template,
         'noplaylist': True,
         'quiet': not verbose,
         'no_warnings': True,
         'default_search': 'ytsearch1',
+        'retries': 3,
+        'ignoreerrors': True,
+        'noprogress': True,
+        # Make sure ffmpeg path is correct or leave it out if ffmpeg is on PATH
         'ffmpeg_location': r'C:\ffmpeg\bin\ffmpeg.exe',
         'postprocessors': [
-            {'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': str(bitrate_kbps)},
+            {
+                # Convert to MP3 after download
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': str(bitrate_kbps),
+            },
             {'key': 'FFmpegMetadata'}
         ],
-        'retries': 3,
-        'noprogress': True,
     }
+
+    out_dir = Path(out_path_template).parent
+    out_dir.mkdir(parents=True, exist_ok=True)
+
     try:
         with YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(search_query, download=True)
+
+            # Handle search results
             if isinstance(info, dict) and info.get('entries'):
                 info = info['entries'][0]
-            out_dir = Path(out_path_template).parent
+
+            # Find the most recent .mp3 file generated
             mp3s = sorted(out_dir.glob("*.mp3"), key=lambda p: p.stat().st_mtime, reverse=True)
-            return mp3s[0] if mp3s else None
+            if mp3s:
+                return mp3s[0]
+            else:
+                if verbose:
+                    logging.warning("No MP3 produced for query: %s", search_query)
+                return None
+
     except Exception as e:
         if verbose:
-            logging.exception("yt-dlp failed for: %s -> %s", search_query, e)
-    return None
+            logging.error("yt-dlp failed for query '%s': %s", search_query, e)
+
+        try:
+            if verbose:
+                logging.info("Retrying with fallback format...")
+            ydl_opts['format'] = 'bestaudio/best'
+            with YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(search_query, download=True)
+                if isinstance(info, dict) and info.get('entries'):
+                    info = info['entries'][0]
+                mp3s = sorted(out_dir.glob("*.mp3"), key=lambda p: p.stat().st_mtime, reverse=True)
+                return mp3s[0] if mp3s else None
+        except Exception as e2:
+            if verbose:
+                logging.error("Fallback also failed for '%s': %s", search_query, e2)
+            return None
+
 
 def embed_tags(mp3_path: Path, track: Track, index: int):
     try:
