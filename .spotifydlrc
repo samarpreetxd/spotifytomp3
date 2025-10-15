@@ -1,0 +1,10 @@
+[defaults]
+out = downloads
+bitrate = 192
+workers = 4
+skip_existing = true
+ffmpeg_path =
+verbose = false
+async = true
+log_file = logs/run.log
+youtube_api_key =
