@@ -1,38 +1,44 @@
 # Spotify to MP3
 
-This project downloads Spotify playlists as MP3 files by finding each track on YouTube and converting the audio with FFmpeg. It includes a hybrid search system (YouTube Data API v3 plus yt-dlp fallback), tagging with cover art, concurrent/async downloading, and robust logging with retries.
+This project downloads Spotify playlists as MP3 files by finding each track on YouTube and converting the audio with FFmpeg.  
+It includes a hybrid search system (YouTube Data API v3 + yt-dlp fallback), tagging with cover art, concurrency (threaded or async),  
+and robust structured logging with automatic retries.
 
-## Features
+---
 
-* Fetch tracks from Spotify playlists (public; can work with private via OAuth if you adapt auth).
-* Hybrid search:
+## 🚀 Features
 
-  * YouTube Data API v3 for precise matching when a key is provided.
-  * Automatic fallback to yt-dlp metadata ranking when no key is available.
+* Fetch tracks from public Spotify playlists (supports genre enrichment via artist lookups).
+* **Hybrid Smart Search**:
+  * YouTube Data API v3 for precise matching when an API key is available.
+  * Automatic fallback to yt-dlp metadata ranking when no key is present.
 * MP3 conversion via FFmpeg with configurable bitrate.
-* ID3 tagging (title, artist, album, track number, year, genres) and embedded cover art.
+* Full ID3 tagging (title, artist, album, year, track number, genres) + embedded cover art.
 * Concurrency with threads or optional async pipeline (`--async`).
 * Structured logging, optional JSON logs, rotating file logs, and secret redaction.
-* Retries, basic rate limiting, and defensive fallbacks.
-* Safe filename sanitization for cross-platform paths.
-* Outputs:
-
+* Retries, basic rate limiting, and defensive fallback logic.
+* Safe filename sanitization and auto-length clamping.
+* Generates:
   * `playlist.m3u` (ordered track list)
-  * `download_report.json` (success/failed entries with metadata)
+  * `download_report.json` (metadata for success/failure)
 
-## Requirements
+---
 
-* Python 3.11+ (3.12 recommended)
-* FFmpeg installed or available on PATH
-* Python packages:
+## 🧰 Requirements
+
+* **Python 3.11+** (3.12 recommended)
+* **FFmpeg** installed or on PATH
+* Python dependencies:
 
 ```bash
 pip install -r requirements.txt
-```
+````
 
-## Credentials
+---
 
-Create a `credentials.json` in the project directory or set environment variables.
+## 🔐 Credentials
+
+Create a `credentials.json` file or set environment variables.
 
 ```json
 {
@@ -50,9 +56,11 @@ Environment variable alternatives:
 * `SPOTIFY_REDIRECT_URI`
 * `YOUTUBE_API_KEY`
 
-## Configuration file (.spotifydlrc)
+---
 
-You can set defaults in either `~/.spotifydlrc` or `./.spotifydlrc`.
+## ⚙️ Configuration (.spotifydlrc)
+
+Defaults can be placed in either `~/.spotifydlrc` or `./.spotifydlrc`.
 
 ```ini
 [defaults]
@@ -67,113 +75,111 @@ log_file = logs/run.log
 youtube_api_key =
 ```
 
-CLI flags always override config values.
+> CLI flags always override config values.
 
-## Usage
+---
 
-Basic:
+## 💻 Usage
+
+### Basic
 
 ```bash
 python spotify_playlist_to_mp3_hybrid.py <playlist_url_or_id> -o downloads -w 4
 ```
 
-High-performance hybrid search:
+### Hybrid Smart Search + Async
 
 ```bash
 python spotify_playlist_to_mp3_hybrid.py <playlist_url_or_id> -w 6 --async --smart-search -o downloads
 ```
 
-If you prefer to pass the YouTube API key on the CLI:
+### Specify YouTube API Key on CLI
 
 ```bash
 python spotify_playlist_to_mp3_hybrid.py <playlist_url_or_id> --smart-search --youtube-api-key YOUR_KEY
 ```
 
-### Options
+### Dry Run (list only)
 
-* `-o`, `--out` Output directory (default: `downloads`)
-* `-w`, `--workers` Number of concurrent downloads (default: 2)
-* `-b`, `--bitrate` MP3 bitrate kbps (default: 192)
-* `--skip-existing` Skip already downloaded tracks
-* `--verbose` Verbose logging
-* `--ffmpeg` Path to ffmpeg binary (Windows users may need this)
-* `--log-file` Path to write rotating logs (in addition to console)
-* `--async` Enable async pipeline (requires `aiohttp`)
-* `--smart-search` Enable hybrid YouTube matching (API + yt-dlp fallback)
-* `--youtube-api-key` Override key from env/config/credentials.json
+```bash
+python spotify_playlist_to_mp3_hybrid.py <playlist_url_or_id> --dry-run
+```
 
-## Notes
+---
 
-* Windows: if FFmpeg is not on PATH, set `--ffmpeg` (the script will also detect `C:\ffmpeg\bin\ffmpeg.exe` if present).
-* Output files are written to `<out>/<playlist_id_sanitized>/`.
-* Filenames are sanitized and prefixed with track index for stable ordering.
+## ⚡ Options
 
-## Recent Updates (12 October 2025)
+* `-o`, `--out` — Output directory (default: `downloads`)
+* `-w`, `--workers` — Number of concurrent downloads (default: 2)
+* `-b`, `--bitrate` — MP3 bitrate kbps (default: 192)
+* `--skip-existing` — Skip already-downloaded tracks
+* `--verbose` — Verbose logging
+* `--ffmpeg` — Path to ffmpeg binary (Windows users may need this)
+* `--log-file` — Path for rotating logs
+* `--async` — Enable async mode (requires `aiohttp`)
+* `--smart-search` — Enable hybrid YouTube matching (API + yt-dlp fallback)
+* `--youtube-api-key` — Override YouTube API key
+* `--dry-run` — List all tracks without downloading
 
-Improved stability and compatibility:
+---
 
-* Resolved yt-dlp “Requested format is not available” by using dynamic format selection:
+## 🪟 Windows Notes
 
-  ```python
-  'format': 'bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio/best'
-  ```
-* Automatic retries for transient YouTube failures.
-* Better error handling and fallbacks for unavailable formats.
-* Compatibility improvements for YouTube’s `nsig` changes.
-* Ensured FFmpeg re-encodes to the selected `--bitrate`.
+* The script now automatically detects FFmpeg from:
 
-Enhanced reliability:
+  1. `--ffmpeg` CLI argument
+  2. `FFMPEG_PATH` environment variable
+  3. System PATH (`ffmpeg` or `ffmpeg.exe`)
+  4. Common path `C:\ffmpeg\bin\ffmpeg.exe`
 
-* Preference for high-quality audio streams (`webm`/`m4a`).
-* Safer output paths and filenames.
-* Stronger fallback logic if best formats are temporarily unavailable.
-* Clearer logging with `--verbose`.
+If FFmpeg is not found, the script will warn but continue.
 
-Result:
+---
 
-* Reliable operation with current YouTube and yt-dlp (as of October 2025).
+## 🧩 Outputs
 
-## Recent Updates (15 October 2025)
+* `playlist.m3u` — ordered track listing
+* `download_report.json` — JSON summary of successes/failures
+* MP3s named as:
 
-Hybrid Smart Search and performance:
+```
+NN - Artist 1, Artist 2 - Title.mp3
+```
 
-* Introduced `--smart-search`:
+---
 
-  * Uses YouTube Data API v3 to rank candidate videos by channel/title match, “official” signals, and duration proximity.
-  * Falls back to yt-dlp search when API is unavailable or scores are insufficient.
-* Added `--async` mode using `asyncio` and `aiohttp` to parallelize I/O; guarded by a semaphore to respect system limits.
-* Threaded path remains available; choose `-w` to control concurrency.
+## 🧠 Recent Updates (20 October 2025)
 
-Metadata and tagging:
+### New Features
 
-* Enriched ID3 tags with album, track number, year, and top genres (via batched artist lookups).
-* Embedded cover art from Spotify album images; async fast-path for cover fetch when available.
+* Added `--dry-run` flag to list Spotify playlist tracks without downloading.
+* Automatic FFmpeg detection:
 
-Resilience and safety:
+  * Checks `--ffmpeg`, `FFMPEG_PATH`, PATH, and common Windows locations.
+* Argument validation:
 
-* Unified retry decorator (Tenacity when installed; builtin exponential backoff otherwise).
-* Optional simple rate limiting around Spotify calls.
-* Redacting formatter hides secrets and long tokens in logs.
-* Structured JSON logs when `python-json-logger` is installed; rotating file logging via `--log-file`.
+  * Bitrate clamped to `32–320 kbps`.
+  * Worker count validated (`>=1`).
+* More detailed logging for async/threaded download progress.
+* Cleaner log output messages and improved readability.
 
-Configuration and DX:
+### Improvements
 
-* `.spotifydlrc` support for local or global defaults.
-* `download_report.json` summarizing successes/failures with metadata.
-* `playlist.m3u` generated in final order.
-* Safer filename sanitizer with length limits and whitespace normalization.
+* Revised startup messages and argument checks.
+* Enhanced FFmpeg detection reliability on Windows and macOS.
+* Consistent handling of optional dependencies.
+* Updated retry logic for transient network issues.
+* Simplified playlist ID parsing.
+* Better defensive coding across all modules.
 
-Internal improvements:
+### Result
 
-* Clear separation of concerns:
+✅ More stable, flexible, and user-friendly.
+Perfect for both automation scripts and manual CLI use.
 
-  * `HybridSmartSearch` for URL resolution.
-  * `YTDLPWrapper` for download/convert.
-  * `Tagger` for ID3 and cover art.
-  * `PlaylistDownloader` for orchestration, threading/async, and reporting.
-* Defensive handling of optional dependencies; graceful degradation when extras are missing.
+---
 
-## Example credentials.json
+## 🧩 Example credentials.json
 
 ```json
 {
@@ -184,23 +190,21 @@ Internal improvements:
 }
 ```
 
-## Outputs
+---
 
-* `playlist.m3u`
-* `download_report.json`
-* MP3 files named as:
+## 🧾 Troubleshooting
 
-  ```
-  NN - Artist 1, Artist 2 - Title.mp3
-  ```
+* **FFmpeg not found** → install and ensure it’s on PATH or pass via `--ffmpeg`.
+* **Spotify credentials missing** → set env vars or use `credentials.json`.
+* **YouTube API quota errors** → omit `--smart-search` to rely on yt-dlp fallback.
+* **Slow downloads or rate limits** → lower `-w` or disable `--async`.
+* **Invalid bitrate** → automatically corrected to 192 kbps.
 
-## Troubleshooting
+---
 
-* Missing FFmpeg: install FFmpeg and ensure the binary is discoverable or pass `--ffmpeg`.
-* Spotify credentials missing: set env vars or create `credentials.json`.
-* YouTube API quota errors: omit `--smart-search` to use yt-dlp fallback only, or supply a valid key.
-* Rate limits: reduce `-w` or disable `--async` on low-resource systems.
+## 📜 License
 
-## License
+This project uses Spotify, YouTube, yt-dlp, and FFmpeg APIs/tools.
+Ensure compliance with their respective terms of service and local copyright laws.
 
-This project depends on third-party services and tools (Spotify, YouTube, yt-dlp, FFmpeg). Ensure your use complies with applicable terms and local laws.
+
