@@ -1,27 +1,3 @@
-#!/usr/bin/env python3
-"""
-Spotify Playlist -> MP3 — Hybrid Smart Search Pro Edition
-
-What you get in this single script:
-- Pro core: async/threaded downloads, structured logging, Rich/tqdm progress, tagging + cover art, .spotifydlrc config
-- Optional `--smart-search`: hybrid YouTube matching (YouTube Data API v3 + yt-dlp fallback)
-- Reads Spotify creds and optional `youtube_api_key` from `credentials.json` or env vars
-
-credentials.json example:
-{
-  "client_id": "your_spotify_client_id",
-  "client_secret": "your_spotify_client_secret",
-  "redirect_uri": "http://localhost:8888/callback",
-  "youtube_api_key": "YOUR_YT_DATA_API_KEY"
-}
-
-Quick start:
-  python spotify_playlist_to_mp3_hybrid.py <playlist_url> -w 6 --async --smart-search -o downloads
-
-Notes:
-- On Windows, set --ffmpeg explicitly if not on PATH.
-- If YouTube API key is absent, smart search falls back to yt-dlp metadata ranking.
-"""
 from __future__ import annotations
 
 import os
@@ -45,7 +21,7 @@ from yt_dlp import YoutubeDL
 from mutagen.easyid3 import EasyID3
 from mutagen.id3 import ID3, APIC
 
-# ---------- Optional libs ----------
+#  Optional libs 
 try:  # progress UI
     from rich.progress import Progress, BarColumn, TimeRemainingColumn, MofNCompleteColumn, TextColumn
     from rich.console import Console
@@ -88,7 +64,7 @@ except Exception:
     sleep_and_retry = None
     _RATE_LIMIT = False
 
-# ---------- Retry decorator (fallback) ----------
+#  Retry decorator (fallback) 
 def simple_retry(max_attempts: int = 3, base_wait: float = 1.0, max_wait: float = 10.0):
     def decorator(fn: Callable):
         def wrapper(*args, **kwargs):
@@ -121,7 +97,7 @@ else:
             return lambda f: simple_retry(max_attempts=attempts)(f)
         return simple_retry(max_attempts=attempts)(fn)
 
-# ---------- Filename sanitization ----------
+#  Filename sanitization 
 INVALID_FN = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
 def safe_filename(name: str, maxlen: int = 120) -> str:
@@ -138,7 +114,7 @@ def safe_filename(name: str, maxlen: int = 120) -> str:
         cleaned = cut
     return cleaned or "untitled"
 
-# ---------- Data structures ----------
+#  Data structures 
 @dataclass
 class Track:
     id: str
@@ -155,7 +131,7 @@ class Track:
     def artist_str(self) -> str:
         return ", ".join(self.artists)
 
-# ---------- Config ----------
+#  Config 
 
 def load_config(cli_args: argparse.Namespace) -> argparse.Namespace:
     config = configparser.ConfigParser()
@@ -184,7 +160,7 @@ def load_config(cli_args: argparse.Namespace) -> argparse.Namespace:
             cli_args.youtube_api_key = getattr(cli_args, 'youtube_api_key', None) or d.get("youtube_api_key", None)
     return cli_args
 
-# ---------- Logging ----------
+#  Logging 
 from logging.handlers import RotatingFileHandler
 
 class RedactingFormatter(logging.Formatter):
@@ -220,7 +196,7 @@ def configure_logging(verbose: bool, log_file: Optional[str]) -> None:
         fh.setFormatter(formatter)
         root.addHandler(fh)
 
-# ---------- Credentials ----------
+#  Credentials 
 CRED_JSON = Path("credentials.json")
 
 def load_credentials() -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
@@ -259,7 +235,7 @@ def parse_playlist_id(url_or_id: str) -> str:
         return s.split(":")[-1]
     return s
 
-# Rate-limited decorator for Spotify calls
+# Rate-limited decorator for Spotify...calls
 if _RATE_LIMIT:
     @sleep_and_retry
     @limits(calls=10, period=1)
@@ -269,7 +245,7 @@ else:
     def _rl_pass():
         return True
 
-# ---------- Spotify fetching ----------
+#  Spotify fetching 
 @dataclass
 class Track:
     id: str
@@ -340,7 +316,7 @@ def enrich_genres(sp: spotipy.Spotify, tracks: List[Track]) -> None:
                 gset.update(id_to_genres.get(aid, []))
             tr.genres = sorted(gset)
 
-# ---------- Hybrid Smart Search ----------
+#  Hybrid Smart Search 
 class HybridSmartSearch:
     def __init__(self, api_key: Optional[str], verbose: bool = False):
         self.api_key = api_key
@@ -474,7 +450,7 @@ class HybridSmartSearch:
         # Fallback to yt-dlp-only
         return self._yt_dlp_fallback(query, duration_s)
 
-# ---------- Download + tagging ----------
+#  Download + tagging 
 class YTDLPWrapper:
     def __init__(self, ffmpeg_path: Optional[str], verbose: bool, smart: Optional[HybridSmartSearch] = None):
         self.ffmpeg_path = ffmpeg_path
@@ -574,7 +550,7 @@ class Tagger:
         except Exception:
             logging.debug("Tagging failed for %s", mp3_path)
 
-# ---------- Async helper (cover art) ----------
+#  Async helper (cover art) 
 async def fetch_cover_bytes_async(url: str, timeout: int = 10) -> Optional[bytes]:
     if not (_ASYNC_OK and aiohttp):
         return None
@@ -588,11 +564,12 @@ async def fetch_cover_bytes_async(url: str, timeout: int = 10) -> Optional[bytes
         return None
     return None
 
-# ---------- Core downloader ----------
+#  Core downloader 
 class PlaylistDownloader:
     def __init__(self, sp: spotipy.Spotify, out_dir: Path, bitrate: int, workers: int,
                  skip_existing: bool, verbose: bool, ffmpeg_path: Optional[str], log_file: Optional[Path],
-                 use_async: bool = False, smart_search: bool = False, youtube_api_key: Optional[str] = None):
+                 use_async: bool = False, smart_search: bool = False, youtube_api_key: Optional[str] = None,
+                 dry_run: bool = False):
         self.sp = sp
         self.out_dir = out_dir
         self.bitrate = bitrate
@@ -607,9 +584,10 @@ class PlaylistDownloader:
         self.smart = HybridSmartSearch(youtube_api_key, verbose=verbose) if smart_search else None
         self.ytdlp = YTDLPWrapper(ffmpeg_path=self.ffmpeg_path, verbose=self.verbose, smart=self.smart)
         self.tagger = Tagger(self.http)
+        self.dry_run = dry_run
 
     def fetch_tracks(self, playlist_id: str) -> List[Track]:
-        logging.info("Fetching playlist tracks from Spotify…")
+        logging.info("Fetching playlist tracks from Spotify...")
         tracks = fetch_playlist_tracks(self.sp, playlist_id)
         logging.info("Fetched %d tracks.", len(tracks))
         return tracks
@@ -759,6 +737,13 @@ class PlaylistDownloader:
             logging.error("No tracks found. Is the playlist public?")
             sys.exit(1)
 
+        if self.dry_run:
+            logging.info("Dry run enabled. Listing tracks only:")
+            for i, t in enumerate(tracks, start=1):
+                print(f"{i:02d}. {t.artist_str} - {t.title} [{t.album or 'Single'}]")
+            logging.info("Dry run complete. No downloads performed.")
+            return
+
         target_dir = self.out_dir / safe_filename(playlist_id)
         target_dir.mkdir(parents=True, exist_ok=True)
 
@@ -766,7 +751,7 @@ class PlaylistDownloader:
         results: List[Tuple[int, Track, Dict[str, Any]]] = []
 
         if self.use_async and _ASYNC_OK:
-            logging.info("Starting async downloads with up to %d concurrent tasks…", self.workers)
+            logging.info("Starting async downloads with up to %d concurrent tasks", self.workers)
             async def runner():
                 sem = asyncio.Semaphore(self.workers)
                 async def guarded(task):
@@ -792,7 +777,7 @@ class PlaylistDownloader:
                 logging.warning("Interrupted by user.")
                 sys.exit(130)
         else:
-            logging.info("Starting downloads with %d workers…", self.workers)
+            logging.info("Starting downloads with %d workers", self.workers)
             with concurrent.futures.ThreadPoolExecutor(max_workers=self.workers) as ex:
                 futures = [ex.submit(self.process_one, payload) for payload in tasks]
                 if _RICH:
@@ -822,17 +807,46 @@ class PlaylistDownloader:
         fail = len(results) - ok
         logging.info("Done. %d succeeded, %d failed. Files saved in: %s", ok, fail, target_dir)
 
-# ---------- CLI ----------
+#  CLI 
 
 def detect_ffmpeg(explicit: Optional[str]) -> Optional[str]:
+    """Return an ffmpeg path if available.
+
+    Order of precedence:
+    1) explicit CLI path
+    2) FFMPEG_PATH env var
+    3) found on PATH (ffmpeg / ffmpeg.exe)
+    4) common Windows location C:\\ffmpeg\\bin\\ffmpeg.exe
+    """
     if explicit:
         return explicit
+    env_path = os.getenv("FFMPEG_PATH")
+    if env_path and Path(env_path).exists():
+        return env_path
+    try:
+        from shutil import which
+        found = which("ffmpeg") or which("ffmpeg.exe")
+        if found:
+            return found
+    except Exception:
+        pass
     common = Path(r"C:\\ffmpeg\\bin\\ffmpeg.exe")
     return str(common) if common.exists() else None
 
 
+def validate_args(args: argparse.Namespace) -> argparse.Namespace:
+    """Clamp and validate CLI arguments to reasonable ranges."""
+    if getattr(args, "bitrate", 192) < 32 or getattr(args, "bitrate", 192) > 320:
+        logging.warning("Bitrate %d out of range (32-320); using 192", args.bitrate)
+        args.bitrate = 192
+    if getattr(args, "workers", 1) < 1:
+        logging.warning("Workers < 1 not allowed; using 1")
+        args.workers = 1
+    return args
+
+
 def main(argv: Optional[List[str]] = None) -> None:
-    parser = argparse.ArgumentParser(description="Spotify Playlist to MP3 — Hybrid Smart Search Pro Edition")
+    parser = argparse.ArgumentParser(description="Spotify Playlist to MP3 - Hybrid Smart Search Pro Edition")
     parser.add_argument("playlist", help="Spotify playlist URL or ID")
     parser.add_argument("--out", "-o", default="downloads", help="Output directory")
     parser.add_argument("--bitrate", "-b", type=int, default=192, help="MP3 bitrate (kbps)")
@@ -844,14 +858,18 @@ def main(argv: Optional[List[str]] = None) -> None:
     parser.add_argument("--async", dest="use_async", action="store_true", help="Enable async pipeline (if aiohttp available)")
     parser.add_argument("--smart-search", action="store_true", help="Use hybrid smart YouTube search (YouTube API + yt-dlp fallback)")
     parser.add_argument("--youtube-api-key", dest="youtube_api_key", help="YouTube Data API v3 key (overrides credentials.json/env)")
+    parser.add_argument("--dry-run", action="store_true", help="List tracks and exit without downloading")
 
     args = parser.parse_args(argv)
     args = load_config(args)
+    args = validate_args(args)
 
     configure_logging(args.verbose, args.log_file)
 
     playlist_id = parse_playlist_id(args.playlist)
     ffmpeg_path = detect_ffmpeg(args.ffmpeg)
+    if not ffmpeg_path:
+        logging.warning("ffmpeg not found via --ffmpeg/env/PATH; audio conversion may fail.")
 
     sp = get_spotify_client()
 
@@ -871,10 +889,11 @@ def main(argv: Optional[List[str]] = None) -> None:
         use_async=args.use_async,
         smart_search=args.smart_search,
         youtube_api_key=yt_key,
+        dry_run=args.dry_run,
     )
 
     def _handle_sigint(sig, frame):  # noqa: ARG001
-        logging.warning("Interrupted by user. Exiting…")
+        logging.warning("Interrupted by user. Exiting.")
         sys.exit(130)
     try:
         signal.signal(signal.SIGINT, _handle_sigint)
